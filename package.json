@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "local-tags",
+	"version": "0.0.1",
+	"description": "Show all tags of the current markdown file.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

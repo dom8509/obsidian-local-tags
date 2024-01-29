@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"id": "local-tags",
+	"name": "Local Tags",
+	"version": "0.0.1",
+	"minAppVersion": "0.0.1",
+	"description": "Show all tags of the current markdown file.",
+	"author": "dom8509",
+	"authorUrl": "https://github.com/dom8509",
 	"isDesktopOnly": false
 }
