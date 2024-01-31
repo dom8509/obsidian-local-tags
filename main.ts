@@ -1,45 +1,45 @@
 import {
-    ItemView, Menu, Notice, Plugin, Pos, setIcon, TAbstractFile, TagCache, TFile, WorkspaceLeaf
+    App, ItemView, Menu, Notice, Plugin, PluginManifest, Pos, setIcon, TAbstractFile, TagCache,
+    TFile, WorkspaceLeaf
 } from 'obsidian';
+import {
+    addTagLeaf, createTagTree, getCollapsableTagList, getFullTagName, getFullTagNames,
+    getUserTagList, SortMethod, sortTagList, sortTagTree, TagLeaf, TagList, TagTree
+} from 'src/TagTree';
 
 const LOCAL_TAGS_VIEW: string = "local-tags-view";
 const ALL_VIEW: string = "all-view";
-
-enum SortMethods {
-	AtoZ,
-	ZtoA,
-	OccurrenceDescending,
-	OccurrenceAscending,
-}
 
 type TagGroup = {
 	name: string;
 	value: Pos[];
 };
 
-type TagLeaf = {
-	value: TagGroup;
-	childs: TagGroup[];
-}
-
-type TagTree = TagLeaf[];
-
-type CallbackFcn = () => void;
-type CallbackEventFcn = (event: MouseEvent) => void;
-
 export default class LocalTagsPlugin extends Plugin {
+	m_sortMethod = 2;
+	m_grouped = false;
+	m_collapsedTags: { [key: string]: boolean } = {};
+
+	constructor(app: App, manifest: PluginManifest) {
+		super(app, manifest);
+
+		this.onSortTags = this.onSortTags.bind(this);
+		this.onGroupTags = this.onGroupTags.bind(this);
+	}
+
 	onload(): void {
 		// console.log('load plugin') // enable plugin
 
-		this.registerView(LOCAL_TAGS_VIEW, (leaf) => new LocalTagsView(leaf));
-		// this.registerView(CANVAS_VIEW, (leaf) => new CanvasView(leaf));
+		this.registerView(
+			LOCAL_TAGS_VIEW,
+			(leaf) => new LocalTagsView(leaf, this)
+		);
 
 		this.addCommand({
 			id: ALL_VIEW,
 			name: "Enable plugin",
 			callback: () => {
 				this.onloadLocalTagsView();
-				// this.onloadCanvasView();
 			},
 		});
 	}
@@ -56,15 +56,44 @@ export default class LocalTagsPlugin extends Plugin {
 	onunload(): void {
 		// console.log('unload local-tag plugin'); // disable plugin
 	}
+
+	getSortMethod() {
+		return this.m_sortMethod;
+	}
+
+	isGrouped() {
+		return this.m_grouped;
+	}
+
+	onSortTags(value: SortMethod) {
+		this.m_sortMethod = value;
+	}
+
+	onGroupTags() {
+		this.m_grouped = !this.m_grouped;
+	}
 }
 
-class LocalTagsView extends ItemView {
-	m_sortMethod = 2;
-	m_grouped = false;
-	m_collapsed = false;
+type GroupTagsClickedCallbackFcn = () => void;
+type SortTagsClickedCallbackFcn = (event: MouseEvent) => void;
+type CollapseTagsClickedCallbackFcn = (
+	tag: TagLeaf[],
+	collapseAll: boolean
+) => void;
 
-	constructor(leaf: WorkspaceLeaf) {
+class LocalTagsView extends ItemView {
+	m_plugin: LocalTagsPlugin;
+	m_collapsed_tags: string[];
+	m_all_tags_collapsed: boolean;
+
+	constructor(leaf: WorkspaceLeaf, plugin: LocalTagsPlugin) {
 		super(leaf);
+
+		console.log("Creating LocalTagsView");
+
+		this.m_plugin = plugin;
+		this.m_collapsed_tags = [];
+		this.m_all_tags_collapsed = false;
 
 		this.onSortTagsClicked = this.onSortTagsClicked.bind(this);
 		this.onGroupTagsClicked = this.onGroupTagsClicked.bind(this);
@@ -88,14 +117,16 @@ class LocalTagsView extends ItemView {
 			item
 				.setTitle("Tag (A - Z)")
 				.setIcon("documents")
-				.setChecked(this.m_sortMethod == 0)
+				.setChecked(this.m_plugin.getSortMethod() == SortMethod.AtoZ)
 				.onClick(() => {
-					this.m_sortMethod = 0;
+					this.m_plugin.onSortTags(SortMethod.AtoZ);
 
 					renderView(
-						sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+						this.getLocalTags(),
 						this.containerEl,
-						this.m_grouped,
+						this.m_collapsed_tags,
+						this.m_plugin.isGrouped(),
+						this.m_plugin.getSortMethod(),
 						this.onSortTagsClicked,
 						this.onGroupTagsClicked,
 						this.onCollapseTagsClicked
@@ -107,14 +138,16 @@ class LocalTagsView extends ItemView {
 			item
 				.setTitle("Tag (Z - A)")
 				.setIcon("documents")
-				.setChecked(this.m_sortMethod == 1)
+				.setChecked(this.m_plugin.getSortMethod() == SortMethod.ZtoA)
 				.onClick(() => {
-					this.m_sortMethod = 1;
+					this.m_plugin.onSortTags(SortMethod.ZtoA);
 
 					renderView(
-						sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+						this.getLocalTags(),
 						this.containerEl,
-						this.m_grouped,
+						this.m_collapsed_tags,
+						this.m_plugin.isGrouped(),
+						this.m_plugin.getSortMethod(),
 						this.onSortTagsClicked,
 						this.onGroupTagsClicked,
 						this.onCollapseTagsClicked
@@ -126,16 +159,21 @@ class LocalTagsView extends ItemView {
 
 		menu.addItem((item) =>
 			item
-				.setTitle("Häufigkeit (hoch - niedrig)")
+				.setTitle("Occurance (high - low)")
 				.setIcon("documents")
-				.setChecked(this.m_sortMethod == 2)
+				.setChecked(
+					this.m_plugin.getSortMethod() ==
+						SortMethod.OccurrenceDescending
+				)
 				.onClick(() => {
-					this.m_sortMethod = 2;
+					this.m_plugin.onSortTags(SortMethod.OccurrenceDescending);
 
 					renderView(
-						sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+						this.getLocalTags(),
 						this.containerEl,
-						this.m_grouped,
+						this.m_collapsed_tags,
+						this.m_plugin.isGrouped(),
+						this.m_plugin.getSortMethod(),
 						this.onSortTagsClicked,
 						this.onGroupTagsClicked,
 						this.onCollapseTagsClicked
@@ -145,16 +183,21 @@ class LocalTagsView extends ItemView {
 
 		menu.addItem((item) =>
 			item
-				.setTitle("Häufigkeit (niedrig - hoch)")
+				.setTitle("Occurance (low - high)")
 				.setIcon("documents")
-				.setChecked(this.m_sortMethod == 3)
+				.setChecked(
+					this.m_plugin.getSortMethod() ==
+						SortMethod.OccurrenceAscending
+				)
 				.onClick(() => {
-					this.m_sortMethod = 3;
+					this.m_plugin.onSortTags(SortMethod.OccurrenceAscending);
 
 					renderView(
-						sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+						this.getLocalTags(),
 						this.containerEl,
-						this.m_grouped,
+						this.m_collapsed_tags,
+						this.m_plugin.isGrouped(),
+						this.m_plugin.getSortMethod(),
 						this.onSortTagsClicked,
 						this.onGroupTagsClicked,
 						this.onCollapseTagsClicked
@@ -168,29 +211,75 @@ class LocalTagsView extends ItemView {
 	onGroupTagsClicked() {
 		console.log("onGroupTagsClicked");
 
-		this.m_grouped = !this.m_grouped;
+		this.m_plugin.onGroupTags();
 
 		renderView(
-			sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+			this.getLocalTags(),
 			this.containerEl,
-			this.m_grouped,
+			this.m_collapsed_tags,
+			this.m_plugin.isGrouped(),
+			this.m_plugin.getSortMethod(),
 			this.onSortTagsClicked,
 			this.onGroupTagsClicked,
 			this.onCollapseTagsClicked
 		);
 	}
 
-	onCollapseTagsClicked() {
+	onCollapseTagsClicked(tags: TagLeaf[], collapseAll: boolean) {
 		console.log("onCollapseTagsClicked");
+
+		if (collapseAll) {
+			this.m_collapsed_tags = [];
+			if (this.m_all_tags_collapsed) {
+				// expand all if all tags are collapsed and btn is pressed again
+				this.m_all_tags_collapsed = false;
+			} else {
+				// add all collapsable tags to the list
+				this.m_collapsed_tags = getFullTagNames(tags);
+				this.m_all_tags_collapsed = true;
+			}
+		} else {
+			// Reset collapse all if one single tag is collapsed
+			if (this.m_all_tags_collapsed) {
+				this.m_all_tags_collapsed = false;
+			}
+
+			for (const tag of tags) {
+				const fullTagName = getFullTagName(tag);
+				if (this.m_collapsed_tags.contains(fullTagName)) {
+					this.m_collapsed_tags.remove(fullTagName);
+				} else {
+					this.m_collapsed_tags.push(fullTagName);
+				}
+			}
+		}
+
+		console.log(this.m_all_tags_collapsed);
+		console.log(this.m_collapsed_tags);
+
+		renderView(
+			this.getLocalTags(),
+			this.containerEl,
+			this.m_collapsed_tags,
+			this.m_plugin.isGrouped(),
+			this.m_plugin.getSortMethod(),
+			this.onSortTagsClicked,
+			this.onGroupTagsClicked,
+			this.onCollapseTagsClicked
+		);
 	}
 
 	async onOpen(): Promise<void> {
+		console.log("Opening Local Tags View");
+
 		this.icon = "stamp";
 
 		renderView(
-			sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+			this.getLocalTags(),
 			this.containerEl,
-			this.m_grouped,
+			this.m_collapsed_tags,
+			this.m_plugin.isGrouped(),
+			this.m_plugin.getSortMethod(),
 			this.onSortTagsClicked,
 			this.onGroupTagsClicked,
 			this.onCollapseTagsClicked
@@ -199,9 +288,11 @@ class LocalTagsView extends ItemView {
 		this.registerEvent(
 			this.app.workspace.on("file-open", () => {
 				renderView(
-					sortLocalTags(this.getLocalTags(), this.m_sortMethod),
+					this.getLocalTags(),
 					this.containerEl,
-					this.m_grouped,
+					this.m_collapsed_tags,
+					this.m_plugin.isGrouped(),
+					this.m_plugin.getSortMethod(),
 					this.onSortTagsClicked,
 					this.onGroupTagsClicked,
 					this.onCollapseTagsClicked
@@ -210,23 +301,24 @@ class LocalTagsView extends ItemView {
 		);
 	}
 
-	getLocalTags(): TagGroup[] {
+	getLocalTags(): TagTree {
+		const tagTree = createTagTree();
 		const activeFile: TFile | null = this.app.workspace.getActiveFile();
 
 		if (activeFile == null) {
-			return [];
+			return tagTree;
 		}
 
 		const fileCache = this.app.metadataCache.getFileCache(activeFile);
 
 		if (fileCache == null) {
-			return [];
+			return tagTree;
 		}
 
 		const tagCache = fileCache.tags;
 
 		if (tagCache == undefined) {
-			return [];
+			return tagTree;
 		}
 
 		type GroupedTags = { [tag: string]: Pos[] };
@@ -243,14 +335,11 @@ class LocalTagsView extends ItemView {
 			{}
 		);
 
-		const tagGroups: TagGroup[] = Object.entries(groupedTags).map(
-			([name, value]) => ({
-				name,
-				value,
-			})
-		);
+		for (const [name, value] of Object.entries(groupedTags)) {
+			addTagLeaf(tagTree, name, "", value.length);
+		}
 
-		return tagGroups;
+		return tagTree;
 	}
 
 	async onClose(): Promise<void> {
@@ -258,184 +347,142 @@ class LocalTagsView extends ItemView {
 	}
 }
 
-function sortLocalTags(tags: TagGroup[], sortMethod: SortMethods): TagGroup[] {
-	switch (sortMethod) {
-		case SortMethods.AtoZ:
-			tags.sort((a, b) => a.name.localeCompare(b.name));
-			break;
-		case SortMethods.ZtoA:
-			tags.sort((a, b) => b.name.localeCompare(a.name));
-			break;
-		case SortMethods.OccurrenceDescending:
-			tags.sort((a, b) => b.value.length - a.value.length);
-			break;
-		case SortMethods.OccurrenceAscending:
-			tags.sort((a, b) => a.value.length - b.value.length);
-			break;
-	}
+function createTagTreeView(
+	el: HTMLDivElement,
+	tagTree: TagTree,
+	collapsedTags: string[],
+	onCollapseTagsClicked: CollapseTagsClickedCallbackFcn
+) {
+	for (let tag of tagTree.childs) {
+		const currentFullTag = getFullTagName(tag);
+		console.log(collapsedTags)
+		const isCollapsedClassString = collapsedTags.contains(currentFullTag) ? "is-collapsed" : ""
 
-	return tags;
-}
+		const contentTreeItem: HTMLDivElement = el.createDiv({
+			cls: `tree-item ${isCollapsedClassString}`,
+		});
 
-// function groupLocalTags(tags: TagGroup[]): TagTree {}
-
-function isTagGroup(tagName: string) {
-	return tagName.includes("/");
-}
-
-function createTagList(el: HTMLDivElement, tag: TagGroup) {
-	const contentTreeItem: HTMLDivElement = el.createDiv({
-		cls: "tree-item",
-	});
-
-	contentTreeItem.createDiv(
-		{
-			cls: "tree-item-self is-clickable outgoing-link-item",
-			attr: { draggable: true },
-		},
-		(el) => {
-			el.createDiv({
-				cls: "tree-item-inner",
-				text: tag.name.replace("#", ""),
-			}).addEventListener("click", () => {
-				const query = `tag:${tag.name} file:"${
-					this.app.workspace.getActiveFile().name
-				}"`;
-				this.app.internalPlugins.plugins[
-					"global-search"
-				].instance.openGlobalSearch(query);
-			});
-			el.createDiv({ cls: "tree-item-flair-outer" }, (el) => {
-				el.createSpan({
-					cls: "tag-pane-tag-count tree-item-flair",
-					text: tag.value.length.toString(),
-				});
-			});
-		}
-	);
-}
-
-function createTreeEl(el: HTMLDivElement, tag: string) {
-	const contentTreeItem: HTMLDivElement = el.createDiv({
-		cls: "tree-item",
-	});
-
-	const tagTokens: string[] = tag.split("/");
-
-	for (let i = 0; i < tagTokens.length; ++i) {
-		console.log(tagTokens[i]);
-	}
-}
-
-function createTagTree(el: HTMLDivElement, tag: TagGroup, tagPath: string) {
-	const contentTreeItem: HTMLDivElement = el.createDiv({
-		cls: "tree-item",
-	});
-
-	const tagTokens: string[] = tag.name
-		.replace("#", "")
-		.replace(tagPath, "")
-		.split("/");
-
-	const currentFullTag = `tag:${tagPath}/${tagTokens[0]}`.replace(
-		/tag:\//,
-		""
-	);
-	console.log("currentFullTag");
-	console.log(currentFullTag);
-
-	console.log(tagTokens);
-
-	console.log(tagTokens[0]);
-	contentTreeItem.createDiv(
-		{
-			cls: "tree-item-self is-clickable mod-collapsible",
-			attr: {
-				style: "margin-left: 0px !important; padding-left: 24px !important;",
-			},
-		},
-		(el) => {
-			console.log(`tag:${tagPath}/${tagTokens[0]}`.replace(/^\//, ""));
-			if (tagTokens.length > 1) {
-				el.createDiv(
-					{
-						cls: "tree-item-icon collapse-icon",
-					},
-					(el) => {
-						setIcon(el, "right-triangle");
-					}
-				);
-			}
-			el.createSpan(
+		contentTreeItem
+			.createDiv(
 				{
-					cls: "tree-item-inner",
-					text: tagTokens[0],
+					cls: "tree-item-self is-clickable mod-collapsible",
+					attr: {
+						style: "margin-left: 0px !important; padding-left: 24px !important;",
+					},
 				},
 				(el) => {
-					el.createDiv;
+					// If the tag has also child items create foldable list icon
+					if (tag.childs.length > 0) {
+						el.createDiv(
+							{
+								cls: `tree-item-icon collapse-icon ${isCollapsedClassString}`,
+							},
+							(foldBtnEl) => {
+								setIcon(foldBtnEl, "right-triangle");
+							}
+						).addEventListener("click", (event) => {
+							onCollapseTagsClicked([tag], false);
+							event.stopPropagation();
+						});
+					}
+
+					el.createSpan(
+						{
+							cls: "tree-item-inner",
+							text: tag.name,
+						},
+						(el) => {
+							el.createDiv;
+						}
+					);
+
+					el.createDiv(
+						{ cls: "tree-item-flair-outer" },
+						(countEl) => {
+							countEl.createSpan({
+								cls: "tag-pane-tag-count tree-item-flair",
+								text: tag.count.toString(),
+							});
+						}
+					);
 				}
-			).addEventListener("click", () => {
+			)
+			.addEventListener("click", () => {
 				const query =
-					`tag:${tagPath}/${tagTokens[0]}`.replace(/tag:\//, "tag:") +
+					`tag:${currentFullTag}`.replace(/tag:\//, "tag:") +
 					" " +
 					`file:"${this.app.workspace.getActiveFile().name}"`;
 				this.app.internalPlugins.plugins[
 					"global-search"
 				].instance.openGlobalSearch(query);
 			});
-			el.createDiv({ cls: "tree-item-flair-outer" }, (el) => {
-				el.createSpan({
-					cls: "tag-pane-tag-count tree-item-flair",
-					text: tag.value.length.toString(),
-				});
-			});
-		}
-	);
 
-	if (tagTokens.length > 0) {
-		el.createDiv(
-			{
-				cls: "tree-item-children",
-			},
-			(child) => {
-				child.createDiv({
-					attr: {
-						style: "width: 1px; height: 0.1px; margin-bottom: 0px;",
-					},
-				});
+		if (tag.childs.length > 0 && !collapsedTags.contains(currentFullTag)) {
+			contentTreeItem.createDiv(
+				{
+					cls: "tree-item-children",
+				},
+				(childEl) => {
+					childEl.createDiv({
+						attr: {
+							style: "width: 1px; height: 0.1px; margin-bottom: 0px;",
+						},
+					});
 
-				const subTag = tagTokens
-					.slice(1)
-					.reduce((acc, current) => {
-						const previous =
-							acc.length > 0 ? acc[acc.length - 1] : "";
-						const combined = previous
-							? `${previous}/${current}`.replace(/^\//, "")
-							: current;
-						return [...acc, combined];
-					}, [])
-					.pop();
-
-				console.log(subTag);
-				if (subTag) {
-					createTagTree(
-						child,
-						{ name: subTag, value: tag.value },
-						`${tagPath}/${tagTokens[0]}`.replace(/^\//, "")
-					);
+					createTagTreeView(childEl, tag, collapsedTags, onCollapseTagsClicked);
 				}
-			}
-		);
+			);
+		}
+	}
+}
+
+function createTagListView(el: HTMLDivElement, tagList: TagList) {
+	for (let tag of tagList) {
+		const currentTag = (tag.path + "/" + tag.name).replace(/^\//, "");
+
+		const contentTreeItem: HTMLDivElement = el.createDiv({
+			cls: "tree-item",
+		});
+
+		contentTreeItem
+			.createDiv(
+				{
+					cls: "tree-item-self is-clickable outgoing-link-item",
+					attr: { draggable: true },
+				},
+				(el) => {
+					el.createDiv({
+						cls: "tree-item-inner",
+						text: currentTag,
+					});
+					el.createDiv({ cls: "tree-item-flair-outer" }, (el) => {
+						el.createSpan({
+							cls: "tag-pane-tag-count tree-item-flair",
+							text: tag.count.toString(),
+						});
+					});
+				}
+			)
+			.addEventListener("click", () => {
+				const query = `tag:#${currentTag} file:"${
+					this.app.workspace.getActiveFile().name
+				}"`;
+				this.app.internalPlugins.plugins[
+					"global-search"
+				].instance.openGlobalSearch(query);
+			});
 	}
 }
 
 function renderView(
-	tags: TagGroup[],
+	tagTree: TagTree,
 	container: Element,
+	collapsedTags: string[],
 	groupBtnActive: boolean,
-	onSortTagsClicked: CallbackEventFcn,
-	onGroupTagsClicked: CallbackFcn,
-	onCollapseTagsClicked: CallbackFcn
+	sortMethod: SortMethod,
+	onSortTagsClicked: SortTagsClickedCallbackFcn,
+	onGroupTagsClicked: GroupTagsClickedCallbackFcn,
+	onCollapseTagsClicked: CollapseTagsClickedCallbackFcn
 ): void {
 	container.empty();
 
@@ -481,7 +528,7 @@ function renderView(
 	});
 	if (groupBtnActive) {
 		collapseBtn.addEventListener("click", () => {
-			onCollapseTagsClicked();
+			onCollapseTagsClicked(getCollapsableTagList(tagTree), true);
 		});
 	}
 	setIcon(collapseBtn, "chevrons-down-up");
@@ -518,11 +565,17 @@ function renderView(
 		},
 	});
 
-	for (const tag of tags) {
-		if (groupBtnActive) {
-			createTagTree(content, tag, "");
-		} else {
-			createTagList(content, tag);
-		}
+	if (groupBtnActive) {
+		createTagTreeView(
+			content,
+			sortTagTree(tagTree, sortMethod),
+			collapsedTags,
+			onCollapseTagsClicked
+		);
+	} else {
+		createTagListView(
+			content,
+			sortTagList(getUserTagList(tagTree), sortMethod)
+		);
 	}
 }

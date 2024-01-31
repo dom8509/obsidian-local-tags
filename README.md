@@ -1,9 +1,11 @@
 # Local Tags
 
-Show all tags of the current markdown file. 
+With this plugin you get an additional panel that shows all tags of the current markdown file. 
 
-The plugin is available in [Obsidian Community Plugins](https://obsidian.md/plugins). After install, open command palette to enable this plugin, then the views will be default registered in the right panel. 
+The plugin is not yet available in [Obsidian Community Plugins](https://obsidian.md/plugins) but you can install it with `BRAT` for now.
 
-Wish you like it :)
+After install, open command palette to enable this plugin, then the views will be default registered in the right panel. 
 
-![demo](./image/demo.gif)
+```bash
+Enable Command: "Local Tags: Enable Plugin"
+``````
