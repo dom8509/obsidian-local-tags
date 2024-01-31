@@ -1,10 +1,11 @@
 {
 	"id": "local-tags",
 	"name": "Local Tags",
-	"version": "0.0.1",
-	"minAppVersion": "0.0.1",
+	"version": "0.1.0",
+	"minAppVersion": "1.1.0",
 	"description": "Show all tags of the current markdown file.",
 	"author": "dom8509",
 	"authorUrl": "https://github.com/dom8509",
+	"fundingUrl": "https://www.buymeacoffee.com/dom8509",
 	"isDesktopOnly": false
 }
